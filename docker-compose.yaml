@@ -1,0 +1,56 @@
+version: "3"
+
+networks:
+  external-network:
+  
+services:
+  traefik:
+    image: "traefik:${TRAEFIK_VERSION}"
+    container_name: "traefik"
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_MAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      #  test certificate for staging, for production comment out
+#      - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"       
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - external-network
+
+  collabora:
+    image: collabora/code
+    container_name: collabora
+    restart: unless-stopped
+    environment:
+      - 'dictionaries=en_US,de_DE'
+      - username=admin
+      - password=admin
+      - "extra_params=--o:ssl.enable=false  --o:ssl.termination=true"
+    tty: true
+    labels:
+      - "traefik.enable=true"
+      #http entry
+      - "traefik.http.routers.collabora-http.entrypoints=web"
+      - "traefik.http.routers.collabora-http.rule=Host(`${COLLABORA_DOMAIN}`)"
+      - "traefik.http.routers.collabora-http.middlewares=collabora-https-redirect"
+      - "traefik.http.middlewares.collabora-https-redirect.redirectscheme.scheme=https"
+      #https entry
+      - "traefik.http.routers.collabora.entrypoints=websecure"
+      - "traefik.http.routers.collabora.rule=Host(`${COLLABORA_DOMAIN}`)"
+      - "traefik.http.routers.collabora.tls=true"
+      - "traefik.http.routers.collabora.tls.certresolver=myresolver"
+     #optional config file for collabora 
+#    volumes:
+#     - "./coolwsd.xml:/etc/coolwsd/coolwsd.xml" 
+    networks:
+      - external-network
